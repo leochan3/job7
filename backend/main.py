@@ -277,7 +277,7 @@ async def analyze_job_with_ai(job: Dict[str, Any], analysis_prompt: str, job_id:
         "title": job.get("title", "N/A"),
         "company": job.get("company", "N/A"),
         "location": job.get("location", "N/A"),
-        "description": job.get("description", "N/A")[:2000],  # Limit description length
+        "description": job.get("description", "N/A")[:5000],  # Increased limit for better analysis
         "job_type": job.get("job_type", "N/A"),
         "salary_min": job.get("min_amount", "N/A"),
         "salary_max": job.get("max_amount", "N/A"),
@@ -296,10 +296,16 @@ async def analyze_job_with_ai(job: Dict[str, Any], analysis_prompt: str, job_id:
     - Posted: {job_info['date_posted']}
     - Description: {job_info['description']}
     
-    Please provide a concise analysis (max 100 words) that directly answers the request.
-    If asking about years of experience, extract the specific number or range.
-    If asking about skills, list the key technical skills mentioned.
-    If asking about salary, provide the compensation details.
+    IMPORTANT: Read the ENTIRE job description carefully. Look for experience requirements in sections like:
+    - "Requirements", "Qualifications", "What we're looking for"
+    - "Minimum X years", "X+ years", "At least X years", "X years of experience"
+    - Any mention of "experience", "background", "expertise"
+    
+    If asking about years of experience:
+    - Extract the MINIMUM number mentioned (e.g., "5" from "5+ years")
+    - If multiple numbers are mentioned, use the minimum required
+    - If no specific number is found, state "No specific experience requirement found"
+    - Do NOT return 0 unless explicitly stated as "0 years" or "no experience required"
     
     Response format: Provide only the direct answer to the analysis request.
     """
