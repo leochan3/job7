@@ -593,6 +593,16 @@
                 </div>
                 
                 <div class="ai-form-grid">
+                    <!-- API Key Input Field -->
+                    <div class="ai-form-group">
+                        <label for="openai-api-key">OpenAI API Key *</label>
+                        <input type="password" id="openai-api-key" placeholder="sk-..." autocomplete="off" style="font-family:monospace; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem;">
+                        <small style="color: #666; font-size: 0.85rem; margin-top: 4px; display: block;">
+                            🔒 Your API key is only stored in your browser and sent securely with each AI request.<br>
+                            <strong>Never share your key publicly.</strong>
+                        </small>
+                    </div>
+                    
                     <div class="ai-form-group">
                         <label for="analysis-prompt">Analysis Request *</label>
                         <textarea 
@@ -868,6 +878,8 @@
         document.getElementById('ai-analyze-btn').addEventListener('click', async () => {
             const analysisPrompt = document.getElementById('analysis-prompt').value.trim();
             const filterCriteria = document.getElementById('filter-criteria').value.trim();
+            const apiKeyInput = document.getElementById('openai-api-key');
+            const apiKey = apiKeyInput.value.trim();
             const analyzeBtn = document.getElementById('ai-analyze-btn');
             const statusDiv = document.getElementById('ai-status');
             const resultsContainer = document.getElementById('ai-results-container');
@@ -877,10 +889,19 @@
                 return;
             }
             
+            if (!apiKey) {
+                alert('Please enter your OpenAI API key.');
+                apiKeyInput.focus();
+                return;
+            }
+            
             if (currentJobs.length === 0) {
                 alert('No jobs available for analysis. Please search for jobs first.');
                 return;
             }
+            
+            // Store API key in localStorage for convenience
+            localStorage.setItem('openai_api_key', apiKey);
             
             // Show loading state
             analyzeBtn.disabled = true;
@@ -901,6 +922,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'X-OpenAI-API-Key': apiKey
                     },
                     body: JSON.stringify(requestData)
                 });
@@ -919,7 +941,7 @@
                     <div class="error">
                         <strong>AI Analysis Error:</strong> ${error.message}
                         <br><br>
-                        <small>Make sure you have configured your OpenAI API key in the backend.</small>
+                        <small>Make sure you have entered a valid OpenAI API key.</small>
                     </div>
                 `;
                 statusDiv.textContent = 'Analysis failed';
@@ -1012,8 +1034,16 @@
             document.getElementById('results-container').scrollIntoView({ behavior: 'smooth' });
         }
 
-        // Check if API is available on page load
+        // On page load, prefill API key if available and check backend
         window.addEventListener('load', async () => {
+            // Prefill API key from localStorage
+            const apiKeyInput = document.getElementById('openai-api-key');
+            const savedKey = localStorage.getItem('openai_api_key');
+            if (savedKey) {
+                apiKeyInput.value = savedKey;
+            }
+            
+            // Check if API is available
             try {
                 const response = await fetch(`${API_BASE_URL}/health`);
                 if (response.ok) {

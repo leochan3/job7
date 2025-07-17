@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -19,7 +19,7 @@ load_dotenv()
 # Initialize OpenAI client
 openai_client = None
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
 
 if OPENAI_API_KEY:
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
@@ -269,10 +269,8 @@ async def search_jobs(request: JobSearchRequest):
         )
 
 # AI Filtering Functions
-async def analyze_job_with_ai(job: Dict[str, Any], analysis_prompt: str, job_id: int) -> AIAnalysisResult:
+async def analyze_job_with_ai(job: Dict[str, Any], analysis_prompt: str, job_id: int, client) -> AIAnalysisResult:
     """Analyze a single job using OpenAI"""
-    if not openai_client:
-        raise HTTPException(status_code=503, detail="OpenAI client not available. Please configure OPENAI_API_KEY.")
     
     # Prepare job information for analysis
     job_info = {
@@ -308,7 +306,7 @@ async def analyze_job_with_ai(job: Dict[str, Any], analysis_prompt: str, job_id:
     
     try:
         response = await asyncio.to_thread(
-            openai_client.chat.completions.create,
+            client.chat.completions.create,
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=150,
@@ -331,9 +329,9 @@ async def analyze_job_with_ai(job: Dict[str, Any], analysis_prompt: str, job_id:
             analysis_result=f"Analysis failed: {str(e)}"
         )
 
-async def filter_jobs_with_ai(analyzed_jobs: List[AIAnalysisResult], filter_criteria: str) -> List[AIAnalysisResult]:
+async def filter_jobs_with_ai(analyzed_jobs: List[AIAnalysisResult], filter_criteria: str, client) -> List[AIAnalysisResult]:
     """Apply AI filtering to analyzed jobs"""
-    if not openai_client or not filter_criteria:
+    if not filter_criteria:
         # If no filtering criteria, return all jobs
         for job in analyzed_jobs:
             job.meets_criteria = True
@@ -362,7 +360,7 @@ async def filter_jobs_with_ai(analyzed_jobs: List[AIAnalysisResult], filter_crit
     
     try:
         response = await asyncio.to_thread(
-            openai_client.chat.completions.create,
+            client.chat.completions.create,
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=200,
@@ -396,14 +394,21 @@ async def filter_jobs_with_ai(analyzed_jobs: List[AIAnalysisResult], filter_crit
         return analyzed_jobs
 
 @app.post("/ai-filter-jobs", response_model=AIFilterResponse)
-async def ai_filter_jobs(request: AIFilterRequest):
+async def ai_filter_jobs(request: AIFilterRequest, http_request: Request):
     """Apply AI-powered analysis and filtering to job search results"""
     try:
-        if not openai_client:
+        # Get API key from request header or fallback to environment
+        api_key = http_request.headers.get("X-OpenAI-API-Key") or OPENAI_API_KEY
+        
+        if not api_key:
             raise HTTPException(
-                status_code=503, 
-                detail="AI filtering is not available. Please configure OPENAI_API_KEY in your environment."
+                status_code=400, 
+                detail="OpenAI API key is required. Please provide it in the X-OpenAI-API-Key header or configure OPENAI_API_KEY in your environment."
             )
+        
+        # Initialize OpenAI client with the provided API key
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
         
         start_time = datetime.now()
         original_count = len(request.jobs)
@@ -424,7 +429,7 @@ async def ai_filter_jobs(request: AIFilterRequest):
         
         # Step 1: Analyze each job with AI
         analysis_tasks = [
-            analyze_job_with_ai(job, request.analysis_prompt, i)
+            analyze_job_with_ai(job, request.analysis_prompt, i, client)
             for i, job in enumerate(request.jobs)
         ]
         
@@ -449,7 +454,7 @@ async def ai_filter_jobs(request: AIFilterRequest):
         
         if request.filter_criteria:
             print("🔍 Applying AI filtering...")
-            analyzed_jobs = await filter_jobs_with_ai(analyzed_jobs, request.filter_criteria)
+            analyzed_jobs = await filter_jobs_with_ai(analyzed_jobs, request.filter_criteria, client)
             
             # Extract jobs that meet criteria
             jobs_meeting_criteria = [
